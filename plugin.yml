@@ -1,0 +1,16 @@
+name: AlyasRobinHood
+main: LittleBigMC\RBH\RBH
+
+author: CodeBreak
+
+version: 1.0.2-indev
+
+api: [3.0.0-ALPHA12, 3.0.0-ALPHA13]
+
+commands:
+    rbh:
+        usage: /mb <leave-make>
+        description: MicroBattles-Commands
+    rbhstart:
+        usage: /mbstart
+        description: MicroBattles-Force start
