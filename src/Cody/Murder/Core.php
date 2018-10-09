@@ -1,8 +1,8 @@
 <?php
-namespace LittleBigMC\RBH;
+namespace Cody\Murder;
 
 use pocketmine\plugin\PluginBase;
-use pocketmine\scheduler\PluginTask;
+use pocketmine\scheduler\Task;
 use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerInteractEvent;
 use pocketmine\event\player\PlayerDropItemEvent;
@@ -34,17 +34,17 @@ use pocketmine\event\entity\ProjectileHitEvent;
 use pocketmine\event\inventory\InventoryPickupArrowEvent;
 use onebone\economyapi\EconomyAPI;
 
-use LittleBigMC\RBH\Resetmap;
-use LittleBigMC\RBH\RefreshArena;
+use Cody\Murder\Resetmap;
+use Cody\Murder\RefreshArena;
 
-class RBH extends PluginBase implements Listener {
+class Core extends PluginBase implements Listener {
 
 	public $prefix = TextFormat::BOLD . TextFormat::GRAY . "[" . TextFormat::AQUA . "Robin" . TextFormat::GREEN . "Hood" . TextFormat::RESET . TextFormat::GRAY . "]";
 	public $arrow;
 	public $mode = 0;
-    public $currentLevel = "";
-	public $playtime = 300;
-	public $isplayingrbh = [], $iswaitingrbh = [], $deaths = [], $kills = [], $rbharenas = [];
+    	public $currentLevel = "";
+	public $playtime = 900; //300 = 5mins
+	public $isplayingmdr = [], $iswaitingmdr = [], $inno = [], $murderer = [], $detective = [], $mdrarenas = [];
 	
 	public function onEnable()
 	{
@@ -60,18 +60,18 @@ class RBH extends PluginBase implements Listener {
 		
 		$config = new Config($this->getDataFolder() . "/config.yml", Config::YAML);
 		
-		if($config->get("rbharenas")!=null)
+		if($config->get("mdrarenas")!=null)
 		{
-			$this->rbharenas = $config->get("rbharenas");
+			$this->mdrarenas = $config->get("mdrarenas");
 		}
-                foreach($this->rbharenas as $lev)
+                foreach($this->mdrarenas as $lev)
 		{
 			$this->getServer()->loadLevel($lev);
 		}
 		
 		$config->save();
-		$this->getServer()->getScheduler()->scheduleRepeatingTask(new GameSender($this), 20);
-		$this->getServer()->getScheduler()->scheduleRepeatingTask(new RefreshSigns($this), 10);
+		$this->getScheduler()->scheduleRepeatingTask(new GameSender($this), 20);
+		$this->getScheduler()->scheduleRepeatingTask(new RefreshSigns($this), 10);
 		
 	}
 
@@ -83,7 +83,7 @@ public function getArrow() : Item
 public function onJoin(PlayerJoinEvent $event) : void
 {
 	$player = $event->getPlayer();
-	if(in_array($player->getLevel()->getFolderName(), $this->rbharenas))
+	if(in_array($player->getLevel()->getFolderName(), $this->mdrarenas))
 	{
 		$this->leaveArena($player);
 	}
@@ -92,7 +92,7 @@ public function onJoin(PlayerJoinEvent $event) : void
 public function onQuit(PlayerQuitEvent $event) : void
 {
         $player = $event->getPlayer();
-	if(in_array($player->getLevel()->getFolderName(), $this->rbharenas))
+	if(in_array($player->getLevel()->getFolderName(), $this->mdrarenas))
 	{
 		$this->leaveArena($player);
 	}
@@ -101,7 +101,7 @@ public function onQuit(PlayerQuitEvent $event) : void
 public function onHit(ProjectileHitEvent $event)
 {
 	$level = $event->getEntity()->getLevel()->getFolderName();
-	if(in_array($level, $this->rbharenas))
+	if(in_array($level, $this->mdrarenas))
 	{
 		if($event instanceof ProjectileHitEntityEvent)
 		{
@@ -127,7 +127,7 @@ public function onBlockBreak(BlockBreakEvent $event)
 {
 	$player = $event->getPlayer();
 	$level = $player->getLevel()->getFolderName(); 
-	if(in_array($level, $this->rbharenas))
+	if(in_array($level, $this->mdrarenas))
 	{
 		$event->setCancelled();
 	}
@@ -137,7 +137,7 @@ public function onBlockPlace(BlockPlaceEvent $event)
 {
 	$player = $event->getPlayer();
 	$level = $player->getLevel()->getFolderName(); 
-	if(in_array($level, $this->rbharenas))
+	if(in_array($level, $this->mdrarenas))
 	{
 		$event->setCancelled();
 	}
@@ -150,56 +150,30 @@ public function onDamage(EntityDamageEvent $event)
 		if($event->getEntity() instanceof Player && $event->getDamager() instanceof Player)
 		{
 			$a = $event->getEntity()->getName(); $b = $event->getDamager()->getName();
-			if(array_key_exists($a, $this->iswaitingrbh) || array_key_exists($b, $this->iswaitingrbh))
+			if(array_key_exists($a, $this->iswaitingmdr) || array_key_exists($b, $this->iswaitingmdr))
 			{
 				$event->setCancelled();
 				return true;
 			}
-			if(in_array($a, $this->isplayingrbh) && in_array($event->getEntity()->getLevel()->getFolderName(), $this->rbharenas))
+			if(in_array($a, $this->isplayingmdr) && in_array($event->getEntity()->getLevel()->getFolderName(), $this->mdrarenas))
 			{
 				$event->setCancelled(false); //for other plugin's cancelling damage event
-				
-				if($event->getCause() == 2)
-				{
-					$event->setDamage(0.0); //hack, to remove damage on projectile hit entity event
-				}
-				
 				if($event->getDamage() >= $event->getEntity()->getHealth())
 				{
 					$event->setDamage(0.0); //hack, to avoid players from getting killed
 					$event->setCancelled();
-					$inv = $event->getDamager()->getInventory();
-					if(!$inv->contains( Item::get(Item::ARROW) ))
-					{
-						$inv->addItem( $this->getArrow() );
-					}
-					$this->addKill($event->getDamager()->getName()); $this->notifyPlayer($event->getDamager(), 1);
-					$this->addDeath($event->getEntity()->getName()); $this->notifyPlayer($event->getEntity(), 2);
-					$this->randSpawn($event->getEntity(), $event->getEntity()->getLevel()->getFolderName());
+					$this->addKill($event->getDamager()->getName());
+					$event->getDamager()->addTitle("", "§Good Kill");
 				}
 			}	
 			return true;
 		}
 	} else {
 		$a = $event->getEntity()->getName();
-		if(in_array($a, $this->isplayingrbh) || array_key_exists($a, $this->iswaitingrbh))
+		if(in_array($a, $this->isplayingmdr) || array_key_exists($a, $this->iswaitingmdr))
 		{
 			return $event->setCancelled();
 		}
-	}
-}
-	
-private function notifyPlayer(Player $player, int $type): void
-{
-	switch($type)
-	{
-		case 1:
-			$player->addTitle("", "§b+1 Kill");
-		break;
-
-		case 2:
-			$player->addTitle("", "§c+1 Death");
-		break;
 	}
 }
 
@@ -209,7 +183,7 @@ public function onCommand(CommandSender $player, Command $cmd, $label, array $ar
 	{
 		switch($cmd->getName())
 		{
-			case "rbh":
+			case "mdr":
 				if(!empty($args[0]))
 				{
 					if($args[0]=='make' or $args[0]=='create')
@@ -222,10 +196,10 @@ public function onCommand(CommandSender $player, Command $cmd, $label, array $ar
 									{
 										$this->getServer()->loadLevel($args[1]);
 										$this->getServer()->getLevelByName($args[1])->loadChunk($this->getServer()->getLevelByName($args[1])->getSafeSpawn()->getFloorX(), $this->getServer()->getLevelByName($args[1])->getSafeSpawn()->getFloorZ());
-										array_push($this->rbharenas,$args[1]);
+										array_push($this->mdrarenas,$args[1]);
 										$this->currentLevel = $args[1];
 										$this->mode = 1;
-										$player->sendMessage($this->prefix . " •> " . "Touch 1st player spawn");
+										$player->sendMessage($this->prefix . " •> " . "Touch the player lobby spawn");
 										$player->setGamemode(1);
 										$player->teleport($this->getServer()->getLevelByName($args[1])->getSafeSpawn(),0,0);
 										return true;
@@ -247,7 +221,7 @@ public function onCommand(CommandSender $player, Command $cmd, $label, array $ar
 					else if($args[0] == "leave" or $args[0]=="quit" )
 					{
 						$level = $player->getLevel()->getFolderName();
-						if(in_array($level, $this->rbharenas))
+						if(in_array($level, $this->mdrarenas))
 						{
 							$this->leaveArena($player); 
 							return true;
@@ -257,18 +231,18 @@ public function onCommand(CommandSender $player, Command $cmd, $label, array $ar
 						return true;
 					}
 				} else {
-					$player->sendMessage($this->prefix . " •> " . "/rbh <make-leave> : Create Arena | Leave the game");
-					$player->sendMessage($this->prefix . " •> " . "/rbhstart : Start the game in 10 seconds");
+					$player->sendMessage($this->prefix . " •> " . "/mdr <make-leave> : Create Arena | Leave the game");
+					$player->sendMessage($this->prefix . " •> " . "/mdrstart : Start the game in 10 seconds");
 				}
 			break;
 			
-			case "rbhstart":
+			case "mdrstart":
 			if($player->isOp())
 			{
 				$player->sendMessage($this->prefix . " •> " . "§aStarting in 10 seconds...");
 				$config = new Config($this->getDataFolder() . "/config.yml", Config::YAML);
-				$config->set("rbharenas",$this->rbharenas);
-				foreach($this->rbharenas as $arena)
+				$config->set("mdrarenas",$this->mdrarenas);
+				foreach($this->mdrarenas as $arena)
 				{
 					$config->set($arena . "PlayTime", $this->playtime);
 					$config->set($arena . "StartTime", 10);
@@ -347,7 +321,7 @@ function onTeleport(EntityLevelChangeEvent $event)
 		$player = $event->getEntity();
 		$from = $event->getOrigin()->getFolderName();
 		$to = $event->getTarget()->getFolderName();
-		if(in_array($from, $this->rbharenas) && !in_array($to, $this->rbharenas))
+		if(in_array($from, $this->mdrarenas) && !in_array($to, $this->mdrarenas))
 		{
 			$event->getEntity()->setGameMode(2);	
 			$this->removefromplaying($player->getName());
@@ -356,9 +330,9 @@ function onTeleport(EntityLevelChangeEvent $event)
 			$this->cleanPlayer($player);
 			return true;
 		}
-		if(in_array($to, $this->rbharenas))
+		if(in_array($to, $this->mdrarenas))
 		{
-			if (!array_key_exists($player->getName(), $this->iswaitingrbh)){
+			if (!array_key_exists($player->getName(), $this->iswaitingmdr)){
 				$player->sendMessage($this->prefix . " •> §cPlease use the sign to join");
 				return $event->setCancelled();
 			}
@@ -368,15 +342,15 @@ function onTeleport(EntityLevelChangeEvent $event)
 
 public function removefromplaying(string $playername)
 {
-	if (in_array($playername, $this->isplayingrbh)){
-		unset($this->isplayingrbh[ $playername ]);
+	if (in_array($playername, $this->isplayingmdr)){
+		unset($this->isplayingmdr[ $playername ]);
 	}
 }
 	
 public function removefromwaiting(string $playername)
 {
-	if (array_key_exists($playername, $this->iswaitingrbh)){
-		unset($this->iswaitingrbh[ $playername ]);
+	if (array_key_exists($playername, $this->iswaitingmdr)){
+		unset($this->iswaitingmdr[ $playername ]);
 	}
 }
 
@@ -393,11 +367,6 @@ public function removedatas(string $playername)
 private function cleanPlayer(Player $player)
 {
 	$player->getInventory()->clearAll();
-	//$i = Item::get(0);
-	//$player->getArmorInventory()->setHelmet($i);
-	//$player->getArmorInventory()->setChestplate($i);
-	//$player->getArmorInventory()->setLeggings($i);
-	//$player->getArmorInventory()->setBoots($i);
 	$player->getArmorInventory()->clearAll();
 	$player->getArmorInventory()->sendContents($player);
 	$player->setNameTag( $this->getServer()->getPluginManager()->getPlugin('PureChat')->getNametag($player) );
@@ -434,7 +403,7 @@ public function assignSpawn($arena)
 {
 	$config = new Config($this->getDataFolder() . "/config.yml", Config::YAML);
 	$i = 0;
-	foreach($this->iswaitingrbh as $name => $ar)
+	foreach($this->iswaitingmdr as $name => $ar)
 	{
 		if(strtolower($ar) === strtolower($arena))
 		{
@@ -462,7 +431,7 @@ public function assignSpawn($arena)
 			//$player->setGameMode(2);
 			
 			$this->playGame($player);
-			unset( $this->iswaitingrbh[$name] );
+			unset( $this->iswaitingmdr[$name] );
 			$i += 1;
 		}
 	}
@@ -472,31 +441,17 @@ private function playGame(Player $player)
 {
 	$player->addTitle("§lPCP : §fRobin§aHood", "§l§fAim for the highest");
 	$this->insertArrow($player);
-	array_push($this->isplayingrbh, $player->getName()); //finally, set as playing
+	array_push($this->isplayingmdr, $player->getName()); //finally, set as playing
 }
 
-public function insertBow(Player $player)
-{
-	$player->getInventory()->setItem(0, Item::get(Item::BOW, 0, 1)->setCustomName('§l§fAncient Long Bow'));
-}
-
-public function insertAxe(Player $player)
+public function insertMurdererKit(Player $player)
 {
 	$player->getInventory()->setItem(1, Item::get(Item::STONE_AXE, 0, 1)->setCustomName('§l§fHatchet'));
 }
 
-public function insertArrow(Player $player)
+public function insertDetectiveKit(Player $player)
 {
 	$player->getInventory()->setItem(2, $this->getArrow() );
-}
-
-private function giveKit(Player $player)
-{
-	$player->getInventory()->clearAll();
-	$player->getInventory()->setItem(0, Item::get(Item::BOW, 0, 1)->setCustomName('§l§fAncient Long Bow'));
-	$player->getInventory()->setItem(1, Item::get(Item::STONE_AXE, 0, 1)->setCustomName('§l§fHatchet'));
-	$player->getInventory()->setItem(2, $this->getArrow() );
-	
 }
 
 public function onInteract(PlayerInteractEvent $event)
@@ -509,7 +464,7 @@ public function onInteract(PlayerInteractEvent $event)
 		if($this->mode == 26 )
 		{
 			$tile->setText(TextFormat::AQUA . "[Join]", TextFormat::YELLOW  . "0 / 12", "§f".$this->currentLevel, $this->prefix);
-			$this->refreshrbharenas();
+			$this->refreshmdrarenas();
 			$this->currentLevel = "";
 			$this->mode = 0;
 			$player->sendMessage($this->prefix . " •> " . "Arena Registered!");
@@ -522,7 +477,7 @@ public function onInteract(PlayerInteractEvent $event)
 					$config = new Config($this->getDataFolder() . "/config.yml", Config::YAML);
 					$namemap = str_replace("§f", "", $text[2]);
 					
-					$this->iswaitingrbh[ $player->getName() ] = $namemap;//beta, set to waiting to be able to tp
+					$this->iswaitingmdr[ $player->getName() ] = $namemap;//beta, set to waiting to be able to tp
 					$this->kills[ $player->getName() ] = 0; //create kill points
 					$this->deaths[ $player->getName() ] = 0; //create death points
 					
@@ -582,7 +537,7 @@ public function onInteract(PlayerInteractEvent $event)
 		$player->teleport($spawn,0,0);
 		
 		$config = new Config($this->getDataFolder() . "/config.yml", Config::YAML);
-		$config->set("rbharenas", $this->rbharenas);
+		$config->set("mdrarenas", $this->mdrarenas);
 		$config->save();
 		$this->mode=26;
 		return true;
@@ -590,11 +545,11 @@ public function onInteract(PlayerInteractEvent $event)
 }
 
 	
-public function refreshrbharenas()
+public function refreshmdrarenas()
 {
 	$config = new Config($this->getDataFolder() . "/config.yml", Config::YAML);
-	$config->set("rbharenas",$this->rbharenas);
-	foreach($this->rbharenas as $arena)
+	$config->set("mdrarenas",$this->mdrarenas);
+	foreach($this->mdrarenas as $arena)
 	{
 		$config->set($arena . "PlayTime", $this->playtime);
 		$config->set($arena . "StartTime", 90);
@@ -605,7 +560,7 @@ public function refreshrbharenas()
 public function dropitem(PlayerDropItemEvent $event)
 {
 	$player = $event->getPlayer();
-	if(in_array($player->getLevel()->getFolderName(), $this->rbharenas))
+	if(in_array($player->getLevel()->getFolderName(), $this->mdrarenas))
 	{
 		$event->setCancelled(true);
 		return true;
@@ -710,10 +665,10 @@ class GameSender extends PluginTask
 	public function onRun($tick)
 	{
 		$config = new Config($this->plugin->getDataFolder() . "/config.yml", Config::YAML);
-		$rbharenas = $config->get("rbharenas");
-		if(!empty($rbharenas))
+		$mdrarenas = $config->get("mdrarenas");
+		if(!empty($mdrarenas))
 		{
-			foreach($rbharenas as $arena)
+			foreach($mdrarenas as $arena)
 			{
 				$time = $config->get($arena . "PlayTime");
 				$mins = floor($time / 60 % 60);
