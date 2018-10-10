@@ -1,12 +1,12 @@
 <?php
 
-namespace LittleBigMC\RBH;
+namespace Cody\Murder;
 
-use LittleBigMC\RBH\RBH;
+use Cody\Murder\Core;
 
 Class RefreshArena
 {
-    public function __construct(RBH $main){
+    public function __construct(Core $main){
         $this->main = $main;
     }
     
@@ -18,8 +18,7 @@ Class RefreshArena
 		$zip->open($this->main->getDataFolder() . 'arenas/' . $name . '.zip', $zip::CREATE | $zip::OVERWRITE);
 		$files =new \RecursiveIteratorIterator(
 				new \RecursiveDirectoryIterator($path),
-					\RecursiveIteratorIterator::LEAVES_ONLY
-					);
+				\RecursiveIteratorIterator::LEAVES_ONLY);
 		foreach ($files as $file)
 		{
 			if (!$file->isDir())
@@ -28,9 +27,9 @@ Class RefreshArena
 				$zip->addFile($file, $relativePath);
 			}
 		}
-			$zip->close();
-			$player->getServer()->loadLevel($name);
-			unset($zip, $path, $files);
+		$zip->close();
+		$player->getServer()->loadLevel($name);
+		unset($zip, $path, $files);
     }
 }
 
